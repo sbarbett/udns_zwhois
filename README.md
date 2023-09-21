@@ -1,6 +1,6 @@
 # udns_zwhois
 
-`udns_zwhois` is a Python-based CLI tool designed to fetch Zone and WHOIS properties from UltraDNS.
+`udns_zwhois` is a Python-based CLI tool designed to fetch Zone properties from UltraDNS and output it with some additional information gathered from WHOIS.
 
 ## Directory Structure
 
