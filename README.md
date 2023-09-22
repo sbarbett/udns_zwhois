@@ -79,4 +79,3 @@ python3 src/zwhois.py {AUTH_DETAILS} --output-file output.csv --format csv
 ## License
 
 This project is licensed under the terms of the MIT license. For more details, see [LICENSE.md](./LICENSE.md).
-```
