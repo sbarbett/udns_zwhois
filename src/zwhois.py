@@ -17,7 +17,7 @@ def get_ultradns_access_token(username, password):
     response = requests.post(token_url, data=data)
     response.raise_for_status()
     token_data = response.json()
-    return token_data.get('accessToken'), token_data.get('refreshToken'), token_data.get('expiresIn')
+    return token_data.get('accessToken'), token_data.get('refreshToken'), int(token_data.get('expiresIn'))
 
 def refresh_ultradns_access_token(refresh_token):
     token_url = "https://api.ultradns.com/authorization/token"
@@ -28,7 +28,7 @@ def refresh_ultradns_access_token(refresh_token):
     response = requests.post(token_url, data=data)
     response.raise_for_status()
     token_data = response.json()
-    return token_data.get('accessToken'), token_data.get('expiresIn')
+    return token_data.get('accessToken'), int(token_data.get('expiresIn'))
 
 def api_request(url, token, method=requests.get, headers=None, **kwargs):
     """Centralized function for making API requests. This handles token refresh and 401 errors."""
@@ -100,21 +100,23 @@ def get_base_domain(domain):
 
 def get_whois_info(domain):
     try:
-        base_domain = get_base_domain(domain)
-        domain_info = whois.whois(base_domain)
+        domain_info = whois.whois(domain)
         expiration_date = domain_info.expiration_date
         if isinstance(expiration_date, list):
             expiration_date = expiration_date[0]
-        return domain_info.registrar, expiration_date.strftime('%Y-%m-%d %H:%M:%S')
+        registrar = domain_info.registrar
+        if registrar:
+            registrar = registrar.encode('utf-8', 'replace').decode('utf-8')
+        return registrar, expiration_date.strftime('%Y-%m-%d %H:%M:%S')
     except Exception as e:
         return "Not found", "Not found"
 
 def write_to_file(report, filename, format):
     if format == 'json':
-        with open(filename, 'w') as f:
+        with open(filename, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=4)
     elif format == 'csv':
-        with open(filename, 'w', newline='') as f:
+        with open(filename, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=report[0].keys())
             writer.writeheader()
             for row in report:
