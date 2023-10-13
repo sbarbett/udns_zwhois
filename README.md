@@ -18,7 +18,7 @@ udns_zwhois
 
 - Python 3.x
 - The following Python libraries:
-  - `requests`
+  - `ultra_auth`
   - `python-whois`
   - `tqdm`
 
@@ -29,6 +29,8 @@ To install the required Python packages, navigate to the root directory of the p
 ```bash
 pip install -r requirements.txt
 ```
+
+This project relies on the [ultra_auth](https://github.com/sbarbett/ultra_auth) module.
 
 ## Usage
 
@@ -46,7 +48,7 @@ python3 src/zwhois.py --username YOUR_USERNAME --password YOUR_PASSWORD
 python3 src/zwhois.py --token YOUR_BEARER_TOKEN
 ```
 
-_Note: If you choose to supply a bearer token directly to the script, it will not be able to automatically refresh when it expires. For long-running processes, I recommend using credentials._
+_Note: If you choose to supply a bearer token directly to the script, it will not be able to automatically refresh when it expires unless you also supply a refresh token._
 
 ### Output Options:
 

@@ -1,60 +1,45 @@
+#!/usr/bin/env python3
+
 import argparse
-import requests
 from pprint import pprint
 import whois
 import json
 import csv
-import time
 from tqdm import tqdm
+from ultra_auth import UltraApi
 
-def get_ultradns_access_token(username, password):
-    token_url = "https://api.ultradns.com/authorization/token"
-    data = {
-        'grant_type': 'password',
-        'username': username,
-        'password': password
-    }
-    response = requests.post(token_url, data=data)
-    response.raise_for_status()
-    token_data = response.json()
-    return token_data.get('accessToken'), token_data.get('refreshToken'), int(token_data.get('expiresIn'))
+class CustomHelpParser(argparse.ArgumentParser):
+    def print_help(self, *args, **kwargs):
+        ascii_art = """
+__/\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\_______/\\\\\\\\\\_______/\\\\\\\\\\_____/\\\\\\__/\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\___________                    
+ _\\////////////\\\\\\______/\\\\\\///\\\\\\____\\/\\\\\\\\\\\\___\\/\\\\\\_\\/\\\\\\///////////____________                   
+  ___________/\\\\\\/_____/\\\\\\/__\\///\\\\\\__\\/\\\\\\/\\\\\\__\\/\\\\\\_\\/\\\\\\_______________________                  
+   _________/\\\\\\/______/\\\\\\______\\//\\\\\\_\\/\\\\\\//\\\\\\_\\/\\\\\\_\\/\\\\\\\\\\\\\\\\\\\\\\_______________                 
+    _______/\\\\\\/_______\\/\\\\\\_______\\/\\\\\\_\\/\\\\\\\\//\\\\\\\\/\\\\\\_\\/\\\\\\///////________________                
+     _____/\\\\\\/_________\\//\\\\\\______/\\\\\\__\\/\\\\\\_\\//\\\\\\/\\\\\\_\\/\\\\\\_______________________               
+      ___/\\\\\\/____________\\///\\\\\\__/\\\\\\____\\/\\\\\\__\\//\\\\\\\\\\\\_\\/\\\\\\_______________________              
+       __/\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\____\\///\\\\\\\\\\/_____\\/\\\\\\___\\//\\\\\\\\\\_\\/\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\___________             
+        _\\///////////////_______\\/////_______\\///_____\\/////__\\///////////////____________            
+__/\\\\\\______________/\\\\\\__/\\\\\\________/\\\\\\_______/\\\\\\\\\\_______/\\\\\\\\\\\\\\\\\\\\\\_____/\\\\\\\\\\\\\\\\\\\\\\___        
+ _\\/\\\\\\_____________\\/\\\\\\_\\/\\\\\\_______\\/\\\\\\_____/\\\\\\///\\\\\\____\\/////\\\\\\///____/\\\\\\/////////\\\\\\_       
+  _\\/\\\\\\_____________\\/\\\\\\_\\/\\\\\\_______\\/\\\\\\___/\\\\\\/__\\///\\\\\\______\\/\\\\\\______\\//\\\\\\______\\///__      
+   _\\//\\\\\\____/\\\\\\____/\\\\\\__\\/\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\__/\\\\\\______\\//\\\\\\_____\\/\\\\\\_______\\////\\\\\\_________     
+    __\\//\\\\\\__/\\\\\\\\\\__/\\\\\\___\\/\\\\\\/////////\\\\\\_\\/\\\\\\_______\\/\\\\\\_____\\/\\\\\\__________\\////\\\\\\______    
+     ___\\//\\\\\\/\\\\\\/\\\\\\/\\\\\\____\\/\\\\\\_______\\/\\\\\\_\\//\\\\\\______/\\\\\\______\\/\\\\\\_____________\\////\\\\\\___   
+      ____\\//\\\\\\\\\\\\//\\\\\\\\\\_____\\/\\\\\\_______\\/\\\\\\__\\///\\\\\\__/\\\\\\________\\/\\\\\\______/\\\\\\______\\//\\\\\\__  
+       _____\\//\\\\\\__\\//\\\\\\______\\/\\\\\\_______\\/\\\\\\____\\///\\\\\\\\\\/______/\\\\\\\\\\\\\\\\\\\\\\_\\///\\\\\\\\\\\\\\\\\\\\\\/___ 
+        ______\\///____\\///_______\\///________\\///_______\\/////_______\\///////////____\\///////////_____
+ 
+"""
+        print(ascii_art)
+        super().print_help(*args, **kwargs)
 
-def refresh_ultradns_access_token(refresh_token):
-    token_url = "https://api.ultradns.com/authorization/token"
-    data = {
-        'grant_type': 'refresh_token',
-        'refresh_token': refresh_token
-    }
-    response = requests.post(token_url, data=data)
-    response.raise_for_status()
-    token_data = response.json()
-    return token_data.get('accessToken'), int(token_data.get('expiresIn'))
-
-def api_request(url, token, method=requests.get, headers=None, **kwargs):
-    """Centralized function for making API requests. This handles token refresh and 401 errors."""
-    if not headers:
-        headers = {}
-    headers['Authorization'] = f'Bearer {token}'
-    
-    response = method(url, headers=headers, **kwargs)
-    if response.status_code == 401 and refresh_token:  # Token expired, try refreshing
-        token, _ = refresh_ultradns_access_token(refresh_token)
-        headers['Authorization'] = f'Bearer {token}'
-        response = method(url, headers=headers, **kwargs)
-    elif response.status_code == 401:
-        raise Exception("Your bearer token has expired. The script took longer than the token's validity. Please use credentials instead.")
-    
-    response.raise_for_status()
-    
-    return response.json()
-
-def get_zones(token):
-    zones_url = "https://api.ultradns.com/v2/zones"
+def get_zones(client):
+    uri = "/v3/zones"
     all_zones = []
     params = {'limit': 1000}
     while True:
-        data = api_request(zones_url, token, params=params)
-        time.sleep(0.5)
+        data = client.get(uri, params=params)
         all_zones.extend(data.get('zones', []))
 
         # Pagination
@@ -65,21 +50,19 @@ def get_zones(token):
 
     return all_zones
 
-def get_soa_record(zone_name, token):
-    soa_url = f"https://api.ultradns.com/v2/zones/{zone_name}/rrsets/SOA/"
-    data = api_request(soa_url, token)
-    time.sleep(0.5)
+def get_soa_record(zone_name, client):
+    soa_url = f"/v3/zones/{zone_name}/rrsets/SOA/"
+    data = client.get(soa_url)
     rdata = data.get('rrSets', [{}])[0].get('rdata', [''])[0]
     return rdata.split(' ')[1].replace('\\.', '.')
 
-def get_aliased_domains(token):
-    base_url = "https://api.ultradns.com/v2/zones/"
+def get_aliased_domains(client):
+    base_url = "/v3/zones/"
     params = {'q': 'zone_type:ALIAS', 'limit': 1000}
     all_aliased_domains = {}
 
     while True:
-        data = api_request(base_url, token, params=params)
-        time.sleep(0.5)
+        data = client.get(base_url, params=params)
         all_aliased_domains.update(
             {zone['originalZoneName']: zone['properties']['name'] for zone in data.get('zones', [])}
         )
@@ -91,12 +74,6 @@ def get_aliased_domains(token):
         params['cursor'] = next_cursor
 
     return all_aliased_domains
-
-def get_base_domain(domain):
-    parts = domain.split('.')
-    if len(parts) > 2:
-        return ".".join(parts[-2:])
-    return domain
 
 def get_whois_info(domain):
     try:
@@ -123,67 +100,62 @@ def write_to_file(report, filename, format):
                 writer.writerow(row)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Fetch Zone and WHOIS properties from UltraDNS.')
-    parser.add_argument('--username', type=str, help='Username for UltraDNS API.')
-    parser.add_argument('--password', type=str, help='Password for UltraDNS API.')
-    parser.add_argument('--token', type=str, help='Bearer token for UltraDNS API.')
-    parser.add_argument('--output-file', type=str, help='Output file for storing the data.')
-    parser.add_argument('--format', type=str, choices=['json', 'csv'], default='json', help='Format for output file: json or csv.')
+    parser = CustomHelpParser(description="UltraDNS Zone Exporter")
+
+    # Group authentication arguments
+    auth_group = parser.add_argument_group('authentication')
+    auth_group.add_argument("-u", "--username", help="Username for authentication")
+    auth_group.add_argument("-p", "--password", help="Password for authentication")
+    auth_group.add_argument("-t", "--token", help="Directly pass the Bearer token")
+    auth_group.add_argument("-r", "--refresh-token", help="Pass the Refresh token (optional with --token)")
+    
+    parser.add_argument("-o", "--output-file", type=str, help="Output file for storing the data.")
+    parser.add_argument("-f", "--format", type=str, choices=["json", "csv"], default="json", help="Format for output file: json or csv.")
 
     args = parser.parse_args()
 
-    # Check if format is provided without output-file
-    if args.format != 'json' and not args.output_file:
-        parser.error("The --format option requires the --output-file option to be set.")
-
+    # Enforce the rules specified
     if args.token:
-        token = args.token
-        refresh_token = None  # No refresh token when provided directly
-        token_expiry_time = None  # Indeterminate expiry time
+        if args.username or args.password:
+            parser.error("You cannot provide a token along with a username or password.")
     elif args.username and args.password:
-        token, refresh_token, expires_in = get_ultradns_access_token(args.username, args.password)
-        token_expiry_time = time.time() + expires_in  # Record the absolute expiry time
+        pass
+    elif args.username or args.password:  # If one of them is provided but not both
+        parser.error("You must provide both a username and password.")
     else:
-        parser.error("You must provide either a username and password or a bearer token.")
+        parser.error("You must provide either a token, or both a username and password.")
+    
+    if args.token:
+        client = UltraApi(args.token, args.refresh_token, True)
+    else:
+        client = UltraApi(args.username, args.password)
 
-    zones = get_zones(token)
-    aliased_domains_map = get_aliased_domains(token)
+    zones = get_zones(client)
+    aliased_domains_map = get_aliased_domains(client)
 
     report = []
 
-# tqdm will show progress for processing zones
-for zone in tqdm(zones, desc="Processing Zones", ncols=100):
+    for zone in tqdm(zones, desc="Processing Zones", ncols=100):
+        zone_name = zone['properties']['name'].rstrip('.')
+        try:
+            zone_contact_email = get_soa_record(zone_name, client)
+            alias = aliased_domains_map.get(zone_name, None)
+            registrar, expiration_date = get_whois_info(zone_name)
 
-    # Check if token is about to expire
-    if token_expiry_time and time.time() > token_expiry_time - 10:  # 10 seconds buffer
-        if not refresh_token:
-            raise Exception("Operation too long. Access token expired and no refresh token available. Use credentials instead.")
-        token, expires_in = refresh_ultradns_access_token(refresh_token)
-        token_expiry_time = time.time() + expires_in
+            report.append({
+                "Domain Name": zone_name,
+                "Last Modified": zone['properties']['lastModifiedDateTime'],
+                "Zone Contact E-Mail": zone_contact_email,
+                "Registrar": registrar,
+                "Domain Expiration": expiration_date,
+                "Aliased Domains": alias,
+                "Zone Type": zone['properties']['type'],
+                "Resource Record Count": zone['properties']['resourceRecordCount']
+            })
+        except Exception as e:
+            print(f"Error processing zone {zone_name}: {e}")
 
-    zone_name = zone['properties']['name'].rstrip('.')
-    try:
-        zone_contact_email = get_soa_record(zone_name, token)
-        alias = aliased_domains_map.get(zone_name, None)
-        registrar, expiration_date = get_whois_info(zone_name)
-
-        report.append({
-            "Domain Name": zone_name,
-            "Last Modified": zone['properties']['lastModifiedDateTime'],
-            "Zone Contact E-Mail": zone_contact_email,
-            "Registrar": registrar,
-            "Domain Expiration": expiration_date,
-            "Aliased Domains": alias,
-            "Zone Type": zone['properties']['type'],
-            "Resource Record Count": zone['properties']['resourceRecordCount']
-        })
-    except Exception as e:
-        print(f"Error processing zone {zone_name}: {e}")
-    
     if args.output_file:
-        if args.format:
-            write_to_file(report, args.output_file, args.format)
-        else:
-            parser.error("You must specify a format (json or csv) when providing an output file.")
+        write_to_file(report, args.output_file, args.format)
     else:
         pprint(report)
