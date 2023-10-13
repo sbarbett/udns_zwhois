@@ -100,7 +100,7 @@ def write_to_file(report, filename, format):
                 writer.writerow(row)
 
 if __name__ == "__main__":
-    parser = CustomHelpParser(description="UltraDNS Zone Exporter")
+    parser = CustomHelpParser(description="UltraDNS Zone+WHOIS Report")
 
     # Group authentication arguments
     auth_group = parser.add_argument_group('authentication')
